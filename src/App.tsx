@@ -1,10 +1,9 @@
-import React, { useEffect } from 'react';
+import {useEffect} from "react";
 import * as THREE from 'three';
-import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
-import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass';
-import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass';
-import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer';
-import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass';
+import {RenderPass} from "three/examples/jsm/postprocessing/RenderPass";
+import {UnrealBloomPass} from "three/examples/jsm/postprocessing/UnrealBloomPass";
+import {EffectComposer} from "three/examples/jsm/postprocessing/EffectComposer";
+import {OutputPass} from "three/examples/jsm/postprocessing/OutputPass";
 
 const ThreeApp: React.FC = () => {
   useEffect(() => {
@@ -76,13 +75,39 @@ const ThreeApp: React.FC = () => {
     const listener = new THREE.AudioListener();
     camera.add(listener);
 
-    const sound = new THREE.Audio(listener);
-
     const handleStream = (stream: MediaStream) => {
-      const audioContext = listener.context;
+      const AudioContext = window.AudioContext || (window as any).webkitAudioContext;
+      const audioContext = new AudioContext();
       const source = audioContext.createMediaStreamSource(stream);
-      sound.setNodeSource(source as unknown as AudioBufferSourceNode); // Hack to fix type mismatch
-      sound.setVolume(0.5);
+
+      // Create an analyser node
+      const analyser = audioContext.createAnalyser();
+      source.connect(analyser);
+
+      // You can set up the analyser here, for example:
+      analyser.fftSize = 256;
+
+      // Function to get the average frequency data from the analyser
+      const getAverageFrequency = () => {
+        const dataArray = new Uint8Array(analyser.frequencyBinCount);
+        analyser.getByteFrequencyData(dataArray);
+        const sum = dataArray.reduce((a, b) => a + b, 0);
+        return sum / dataArray.length;
+      };
+
+      const clock = new THREE.Clock();
+
+      const animate = () => {
+        camera.position.x += (mouseX - camera.position.x) * 0.05;
+        camera.position.y += (-mouseY - camera.position.y) * 0.5;
+        camera.lookAt(scene.position);
+        uniforms.u_time.value = clock.getElapsedTime();
+        uniforms.u_frequency.value = getAverageFrequency();
+        bloomComposer.render();
+        requestAnimationFrame(animate);
+      };
+
+      animate();
     };
 
     const resumeAudioContext = () => {
@@ -107,8 +132,6 @@ const ThreeApp: React.FC = () => {
           console.error('Error accessing microphone:', err);
         });
 
-    const analyser = new THREE.AudioAnalyser(sound, 32);
-
     let mouseX = 0;
     let mouseY = 0;
     document.addEventListener('mousemove', function (e) {
@@ -117,20 +140,6 @@ const ThreeApp: React.FC = () => {
       mouseX = (e.clientX - windowHalfX) / 100;
       mouseY = (e.clientY - windowHalfY) / 100;
     });
-
-    const clock = new THREE.Clock();
-
-    const animate = () => {
-      camera.position.x += (mouseX - camera.position.x) * 0.05;
-      camera.position.y += (-mouseY - camera.position.y) * 0.5;
-      camera.lookAt(scene.position);
-      uniforms.u_time.value = clock.getElapsedTime();
-      uniforms.u_frequency.value = analyser.getAverageFrequency();
-      bloomComposer.render();
-      requestAnimationFrame(animate);
-    };
-
-    animate();
 
     window.addEventListener('resize', () => {
       camera.aspect = window.innerWidth / window.innerHeight;
